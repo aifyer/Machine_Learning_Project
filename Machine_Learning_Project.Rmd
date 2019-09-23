@@ -1,0 +1,67 @@
+---
+title: 'Machine Learning Project: Prediction Assignment Writeup'
+author: "Aifyer"
+date: "9/21/2019"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+In this report, I use the data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the manner in which they did the exercise. There are 3 parts in the report. 1, How I used cross validation. 2, How I built the model and 3, What the expected out of sample error is. I will include the reasons why I made the choice in part 1 and 2.
+
+```{r}
+setwd("/Users/aifyer/coursera/data_sci/C8_machine_learning")
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+library(ggplot2); library(caret);library(RANN);library(gbm); library(klaR) 
+```
+
+## How I used cross validation
+To do cross validation, people can split the training/testing set using the method of Random subsampling, K-fold, Leave one out and so on. However here, I split the training, testing and validation dataset by the variable of 'user_name'. Because, the 3rd to 7th variables are: "raw_timestamp_part_1 /2", "cvtd_timestamp", "new_window","num_window", which means the data might be recorded by each "new_window" or "time stamp". As it's complicated to divide the data exactly by "new_window" or "time stamp", To keep each sub-sets' integrity, I split the data according to the "user_name" variable. There are 6 users in total, so 4 for training, 1 for testing and 1 for validation. 
+```{r}
+cheTrain<-training[(as.character(training$user_name)!="charles")&(as.character(training$user_name)!="eurico"),]
+cheTest<-training[as.character(training$user_name)=="charles",]
+cheValidate <- training[as.character(training$user_name)=="eurico",]
+```
+
+## How I built the model
+For model fitting, firstly I removed the 1st and 2nd columns in all the dataset. Because they are "row numbers" and "user name", which should not have any contribution for the model fitting. To treat the "testing" data together, I firstly changed its last variable name to "classe"
+
+There are some NA values in the data. First I want to see if there is any less information variables. I use the nearZeroVar function and removed these nearZero variables. I fit the model using prediction with trees (rpart), and check the accuracy on tes data. In both With and Without these nearZero variables, the accuracies are the same: 0.6174. However the running time is much faster in nearZeroVar removal data. So I decide to remove these less information varialbes in the following analysis. Another thing in preProcessing is: I use the knnImpute method to impute the left NA values.
+
+```{r}
+nsv <- nearZeroVar(cheTrain,saveMetrics=TRUE) # remove less information variables
+cheTrain <- cheTrain[,!nsv$nzv]; cheTest<-cheTest[,!nsv$nzv]; cheValidate<-cheValidate[,!nsv$nzv]
+preIm <- preProcess(cheTrain,method="knnImpute") # use the method of knnImpute to impute NA values
+cheTrain <- predict(preIm,cheTrain); cheTest <- predict(preIm, cheTest); cheValidate <- predict(preIm, cheValidate)
+```
+
+I tried the method of trees, random forest, model based prediction, pca, and boosting with trees to fit the model. Model fit with pca was failed becuase of unknown error. All the other methods were successfuly fitted. The prediction accuracy on test data is 0.6174 (trees), 1 (random forest), 0.5834 (model based prediction) and 1 (boosting with trees). Here I use the 2 method of random forest and boosting with trees to do model fit, and predicting on the validation data.
+
+```{r}
+modGbm <- train(classe~.,method="gbm",verbose=FALSE,data=cheTrain)  ## boosting with trees
+predictGbm <- predict(modGbm, newdata=cheValidate)
+confusionMatrix(predictGbm,cheValidate$classe)
+```
+
+```{r}
+modRf <- train(classe~.,method="rf",prox=TRUE,data=cheTrain) ## random forest
+predictRf <- predict(modRf, newdata=cheValidate)
+confusionMatrix(predictRf,cheValidate$classe)
+```
+
+## What the expected out of sample error is
+```{r}
+rmseGbm <-sqrt(sum((predictGbm-cheValidate$classe)^2))
+rmseRf <-sqrt(sum((predictRf-cheValidate$classe)^2))
+```
+
+The Root mean squared error (RMSE) of boosting with trees is `r rmseGbm`, and random forest is `r rmseRf`. One expected out of sample error is the difference condition among users. They might have quite various age, health and personal conditions. Here we just use the data on 4 users to predict all other people. Although the accuracy on the 5th is 1 (cheTest data), and the 6th is 0.9932 (cheValidate data).
+
+## Executive Summary
+In this report, I built two models to predict which manner the person is doing: "modGbm" and "modRf". They perform equally well on my own testing and validating data, with accuracy of 1 and 99.3% separately. 
